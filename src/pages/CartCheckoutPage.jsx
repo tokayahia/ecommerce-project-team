@@ -1,9 +1,13 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
+import { useCart } from '../contexts/CartContext';
 import api from '../services/api';
+import { ROUTES } from '../constants/routes';
 
-const CartCheckoutPage = ({ onNavigate, onCartChange }) => {
-    const [cartItems, setCartItems] = useState([]);
-    const [loading, setLoading] = useState(true);
+const CartCheckoutPage = () => {
+    const navigate = useNavigate();
+    const { cart, removeFromCart, refreshCart } = useCart();
+    const [loading, setLoading] = useState(false);
     const [formData, setFormData] = useState({
         firstName: '',
         lastName: '',
@@ -15,29 +19,10 @@ const CartCheckoutPage = ({ onNavigate, onCartChange }) => {
         cvv: ''
     });
 
-    useEffect(() => {
-        fetchCart();
-    }, []);
-
-    const fetchCart = async () => {
-        try {
-            setLoading(true);
-            const data = await api.getCart();
-            setCartItems(data);
-            if (onCartChange) onCartChange(data.length);
-        } catch (err) {
-            console.error('Failed to fetch cart:', err);
-        } finally {
-            setLoading(false);
-        }
-    };
-
     const handleQuantityChange = async (id, productId, delta) => {
         try {
-            // In a real app, you might have a specific quantity update endpoint
-            // For now, we'll just add/remove or re-fetch
             await api.addToCart({ product_id: productId, quantity: delta });
-            await fetchCart();
+            await refreshCart();
         } catch (err) {
             alert('Failed to update quantity');
         }
@@ -45,8 +30,7 @@ const CartCheckoutPage = ({ onNavigate, onCartChange }) => {
 
     const handleRemoveItem = async (id) => {
         try {
-            await api.removeFromCart(id);
-            await fetchCart();
+            await removeFromCart(id);
         } catch (err) {
             alert('Failed to remove item');
         }
@@ -60,42 +44,36 @@ const CartCheckoutPage = ({ onNavigate, onCartChange }) => {
     const handleSubmit = async (e) => {
         e.preventDefault();
         try {
+            setLoading(true);
             await api.placeOrder();
             alert('Order Placed Successfully!');
-            if (onCartChange) onCartChange(0);
-            onNavigate('home');
+            navigate(ROUTES.HOME);
         } catch (err) {
             alert(err.message || 'Failed to place order');
+        } finally {
+            setLoading(false);
         }
     };
 
     // Calculations
-    const subtotal = cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
     const shipping = subtotal > 100 || subtotal === 0 ? 0 : 9.95;
     const tax = subtotal * 0.08; // 8% tax
     const total = subtotal + shipping + tax;
-
-    if (loading) {
-        return (
-            <div className="flex items-center justify-center min-h-[50vh]">
-                <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-gray-900"></div>
-            </div>
-        );
-    }
 
     return (
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
             <h1 className="text-3xl font-bold text-gray-900 mb-8">Shopping Cart</h1>
 
-            {cartItems.length === 0 ? (
+            {cart.length === 0 ? (
                 <div className="text-center py-24 bg-gray-50 rounded-lg">
                     <h2 className="text-xl font-medium text-gray-900 mb-4">Your cart is empty</h2>
-                    <button
-                        onClick={() => onNavigate && onNavigate('shop')}
+                    <Link
+                        to={ROUTES.SHOP}
                         className="text-accent font-semibold hover:underline"
                     >
                         Continue Shopping
-                    </button>
+                    </Link>
                 </div>
             ) : (
                 <div className="flex flex-col lg:flex-row gap-12">
@@ -103,11 +81,11 @@ const CartCheckoutPage = ({ onNavigate, onCartChange }) => {
                     <div className="w-full lg:w-[60%] space-y-8">
                         <div className="bg-white rounded-lg">
                             <h2 className="text-xl font-semibold text-gray-900 mb-6 pb-4 border-b border-gray-100">
-                                Your Items ({cartItems.length})
+                                Your Items ({cart.length})
                             </h2>
 
                             <div className="space-y-8">
-                                {cartItems.map((item) => (
+                                {cart.map((item) => (
                                     <div key={item.id} className="flex gap-6 py-4 border-b border-gray-50 last:border-0">
                                         {/* Image */}
                                         <div className="w-24 h-32 flex-shrink-0 bg-gray-100 rounded-md overflow-hidden">
@@ -284,9 +262,10 @@ const CartCheckoutPage = ({ onNavigate, onCartChange }) => {
 
                                 <button
                                     type="submit"
-                                    className="w-full bg-accent hover:bg-opacity-90 text-white py-4 rounded-md font-bold tracking-wide transition-all duration-300 shadow-md hover:shadow-lg mt-6"
+                                    disabled={loading}
+                                    className={`w-full bg-accent hover:bg-opacity-90 text-white py-4 rounded-md font-bold tracking-wide transition-all duration-300 shadow-md hover:shadow-lg mt-6 ${loading ? 'opacity-70 cursor-not-allowed' : ''}`}
                                 >
-                                    PAY & PLACE ORDER
+                                    {loading ? 'PROCESSING...' : 'PAY & PLACE ORDER'}
                                 </button>
                             </form>
                         </div>

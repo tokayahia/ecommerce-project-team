@@ -1,4 +1,4 @@
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 const api = {
   getHeaders: () => {
@@ -9,112 +9,115 @@ const api = {
     };
   },
 
-  /**
-   * Helper to handle fetch requests with timeout and better error handling
-   */
-  request: async (endpoint, options = {}, timeout = 8000) => {
-    const controller = new AbortController();
-    const id = setTimeout(() => controller.abort(), timeout);
-
-    const config = {
-      ...options,
-      headers: {
-        ...api.getHeaders(),
-        ...options.headers,
-      },
-      signal: controller.signal,
-    };
-
-    try {
-      const response = await fetch(`${API_URL}${endpoint}`, config);
-      clearTimeout(id);
-
-      if (!response.ok) {
-        let errorMessage = `Error: ${response.status} ${response.statusText}`;
-        try {
-          const errorData = await response.json();
-          errorMessage = errorData.message || errorMessage;
-        } catch (e) {
-          // If response is not JSON, use default error message
-        }
-        throw new Error(errorMessage);
-      }
-
-      return await response.json();
-    } catch (error) {
-      clearTimeout(id);
-
-      if (error.name === 'AbortError') {
-        throw new Error('Request timed out. Please check your internet connection or try again later.');
-      }
-
-      if (error.message === 'Failed to fetch') {
-        throw new Error('Unable to connect to the server. Please ensure the backend is running and you have an active internet connection.');
-      }
-
-      throw error;
-    }
-  },
-
   // Products
   getProducts: async () => {
-    return api.request('/products/', { method: 'GET' });
+    try {
+      const url = `${API_URL}/products/`;
+      const res = await fetch(url);
+      console.log('✅ Response status:', res.status, res.statusText);
+      if (!res.ok) throw new Error(`Failed to fetch products: ${res.status} ${res.statusText}`);
+      const data = await res.json();
+      console.log('📦 Products received:', data.length, 'items');
+      return data;
+    } catch (error) {
+       console.error("❌ API Error:", error);
+       throw error;
+    }
   },
 
   // Auth
   login: async ({ email, password }) => {
-    // Note: We don't use api.request here because we need to set the token AFTER login
     const res = await fetch(`${API_URL}/auth/login/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
     });
-
     if (!res.ok) {
       const err = await res.json();
       throw new Error(err.message || 'Login failed');
     }
-
     const data = await res.json();
     localStorage.setItem('token', data.access_token);
     return data;
   },
 
-  register: async ({ email, password }) => {
-    return api.request('/auth/register/', {
+  register: async ({ email, password, first_name, last_name }) => {
+    // Note: Updated to include name fields if backend supports them in future
+    const res = await fetch(`${API_URL}/auth/register/`, {
       method: 'POST',
-      body: JSON.stringify({ email, password }),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password, first_name, last_name }),
     });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.message || 'Registration failed');
+    }
+    return res.json();
   },
 
   // Cart (protected routes)
-  getCart: async () => {
-    return api.request('/cart/', { method: 'GET' });
+  getCart: async (user_id) => {
+    // Some backends might need user_id as a query param if they don't extract from token
+    const url = user_id ? `${API_URL}/cart/?user_id=${user_id}` : `${API_URL}/cart/`;
+    const res = await fetch(url, {
+      headers: api.getHeaders(),
+    });
+    console.log(`🛒 getCart (${url}) status:`, res.status);
+    if (!res.ok) throw new Error('Failed to fetch cart');
+    const data = await res.json();
+    console.log('📦 getCart data received:', data);
+    return data;
   },
 
-  addToCart: async ({ product_id, quantity = 1 }) => {
-    return api.request('/cart/', {
+  addToCart: async ({ product_id, quantity = 1, user_id }) => {
+    console.log('🛒 addToCart Payload:', { product_id, quantity, user_id });
+    const headers = api.getHeaders();
+    
+    const res = await fetch(`${API_URL}/cart/`, {
       method: 'POST',
-      body: JSON.stringify({ product_id, quantity }),
+      headers: headers,
+      body: JSON.stringify({ product_id, quantity, user_id }),
     });
+
+    if (!res.ok) {
+        const errorText = await res.text();
+        console.error('❌ Failed to add to cart:', res.status, errorText);
+        throw new Error(`Failed to add to cart: ${res.status} ${errorText}`);
+    }
+    
+    const data = await res.json();
+    console.log('✅ addToCart Server Response:', data);
+    return data;
   },
 
   removeFromCart: async (id) => {
-    return api.request(`/cart/${id}/`, {
+    const res = await fetch(`${API_URL}/cart/${id}/`, {
       method: 'DELETE',
+      headers: api.getHeaders(),
     });
+    if (!res.ok) throw new Error('Failed to remove from cart');
+    return res.json();
   },
 
   clearCart: async () => {
-    return api.request('/cart/clear/', {
+    const res = await fetch(`${API_URL}/cart/clear/`, {
       method: 'POST',
+      headers: api.getHeaders(),
     });
+    if (!res.ok) throw new Error('Failed to clear cart');
+    return res.json();
   },
 
   placeOrder: async () => {
-    return api.request('/orders/', {
+    const res = await fetch(`${API_URL}/orders/`, {
       method: 'POST',
+      headers: api.getHeaders(),
     });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.message || 'Failed to place order');
+    }
+    return res.json();
   },
 };
 
